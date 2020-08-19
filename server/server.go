@@ -28,7 +28,8 @@ func StartServer(logger *log.Logger) {
 
 func createServer(addr string) *http.Server {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/downloadM3u8", downloadM3u8)
+	mux.HandleFunc("/cut", downloadCutM3u8)
+	mux.HandleFunc("/download", downloadStream)
 	var server = http.Server{
 		Addr:           addr,
 		Handler:        mux,

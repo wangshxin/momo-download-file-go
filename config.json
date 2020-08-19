@@ -1,7 +1,7 @@
 {
   "Listen": "127.0.0.1:8080",
-  "BaseDir": "/Users/wsx/momo",
-  "PlayListHost": ["http://127.0.0.1"],
-  "TempDir": "/Users/wsx/temp",
-  "TempPrefix": "/momo"
+  "BaseDir": "/Users/wangshixin/momo",
+  "PlayListHost": ["127.0.0.1"],
+  "TempDir": "/Users/wangshixin/temp",
+  "TempPrefix": "/temp"
 }

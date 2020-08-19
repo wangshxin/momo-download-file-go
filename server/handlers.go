@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"os"
 	"path"
@@ -36,7 +37,7 @@ func WriteResponse(code int, message string, writer http.ResponseWriter) {
 	fmt.Fprintf(writer, "%s\n", message)
 }
 
-func readFile(filepath string)  (string){
+func readFile(filepath string) string {
 	f, err := os.Open(filepath)
 	if err != nil {
 		fmt.Println("read file fail", err)
@@ -53,11 +54,38 @@ func readFile(filepath string)  (string){
 	return string(fd)
 }
 
-func downloadM3u8(writer http.ResponseWriter, request *http.Request)  {
+func downloadStream(writer http.ResponseWriter, request *http.Request) {
 	defer RecoverPanic(writer)
 	params := request.URL.Query()
-	m3u8File := params.Get("filename")
+	// m_15/97/8257025640bc1fbe088478b7a2/20200819162829_m_15978257025640bc1fbe088478b7a2
+	file := params.Get("file")
+	storePath := fmt.Sprintf("%s/%s/v.m3u8", cfg.BaseDir, file)
+	fmt.Println(storePath)
+	_, err := os.Stat(storePath)
+	if os.IsNotExist(err) {
+		WriteResponse(400, "video not exists", writer)
+		LogRequest(request, 400, time.Now())
+		return
+	}
+	fileContent := readFile(storePath)
+	if fileContent == "" {
+		WriteResponse(400, "video not exists", writer)
+		LogRequest(request, 400, time.Now())
+		return
+	}
+	m3u8FileName := generateNewPlayList(file, fileContent, 0, 0, true)
+	fmt.Println(m3u8FileName)
+	http.Redirect(writer, request, fmt.Sprintf("http://%s%s/%s", generatePlayListHost(), cfg.TempPrefix, m3u8FileName), http.StatusFound)
+}
+
+func downloadCutM3u8(writer http.ResponseWriter, request *http.Request) {
+	defer RecoverPanic(writer)
+	params := request.URL.Query()
+	// m_15/97/8257025640bc1fbe088478b7a2/20200819162829_m_15978257025640bc1fbe088478b7a2
+	m3u8Dir := params.Get("filename")
+	// 00:06:01
 	startTime := params.Get("start_time")
+	// 00:10:00
 	endTime := params.Get("end_time")
 	if startTime == "" {
 		WriteResponse(400, "Require start_time params", writer)
@@ -69,17 +97,15 @@ func downloadM3u8(writer http.ResponseWriter, request *http.Request)  {
 		LogRequest(request, 400, time.Now())
 		return
 	}
-	if m3u8File == "" {
+	if m3u8Dir == "" {
 		WriteResponse(400, "Require filename params", writer)
 		LogRequest(request, 400, time.Now())
 		return
 	}
-	// 20200801142719_m_159626323578015972c2aa302aa1d2.m3u8 00:06:01 00:10:00
-	fileName := m3u8File[15:]
-	storePath := fmt.Sprintf("%s/%s/%s", cfg.BaseDir, splitPathByVideoName(fileName), m3u8File)
+	storePath := fmt.Sprintf("%s/%s/v.m3u8", cfg.BaseDir, m3u8Dir)
 	fmt.Println(storePath)
-	_,err := os.Stat(storePath)
-	if os.IsNotExist(err){
+	_, err := os.Stat(storePath)
+	if os.IsNotExist(err) {
 		WriteResponse(400, "video not exists", writer)
 		LogRequest(request, 400, time.Now())
 		return
@@ -91,8 +117,8 @@ func downloadM3u8(writer http.ResponseWriter, request *http.Request)  {
 		LogRequest(request, 400, time.Now())
 		return
 	}
-	m3u8FileName := generateNewPlayList(fileName, fileContent, modifyTime(startTime), modifyTime(endTime))
-	http.Redirect(writer, request, "http://127.0.0.1/temp/"+m3u8FileName, http.StatusFound)
+	m3u8FileName := generateNewPlayList(m3u8Dir, fileContent, modifyTime(startTime), modifyTime(endTime), false)
+	http.Redirect(writer, request, fmt.Sprintf("http://%s%s/%s", generatePlayListHost(), cfg.TempPrefix, m3u8FileName), http.StatusFound)
 	return
 }
 
@@ -109,27 +135,32 @@ func splitPathByVideoName(name string) string {
 	}
 }
 
-func generateNewPlayList(filename string, fileContent string, startTime int, endTime int) string {
+func generateNewPlayList(filename string, fileContent string, startTime int, endTime int, all bool) string {
 	extinf := strings.Split(fileContent, "\n")
 	startSecond := 0.0
 	endSecond := 0.0
 	appendFile := []string{"#EXTM3U", "#EXT-X-VERSION:3", "#EXT-X-MEDIA-SEQUENCE:0", "#EXT-X-ALLOW-CACHE:YES", "#EXT-X-TARGETDURATION:61"}
 	length := len(extinf)
-	for i:=0;i<length;i++ {
+	for i := 0; i < length; i++ {
 		if strings.Contains(extinf[i], "#EXTINF") {
-			secondStr := strings.Split(strings.Split(extinf[i], ":")[1], ",")[0]
-			secondFloat, err := strconv.ParseFloat(secondStr, 64)
-			if err != nil {
-				return ""
-			}
-			endSecond = startSecond + secondFloat
-			startTimeFloat := float64(startTime)
-			endTimeFloat := float64(endTime)
-			if (startSecond >= startTimeFloat && startSecond <= endTimeFloat) || (endSecond >= startTimeFloat && endSecond <= endTimeFloat) {
+			if all {
 				appendFile = append(appendFile, extinf[i])
-				appendFile = append(appendFile, fmt.Sprintf("%s/%s",cfg.TempPrefix, extinf[i+1]))
+				appendFile = append(appendFile, fmt.Sprintf("/%s/%s", filename, extinf[i+1]))
+			} else {
+				secondStr := strings.Split(strings.Split(extinf[i], ":")[1], ",")[0]
+				secondFloat, err := strconv.ParseFloat(secondStr, 64)
+				if err != nil {
+					return ""
+				}
+				endSecond = startSecond + secondFloat
+				startTimeFloat := float64(startTime)
+				endTimeFloat := float64(endTime)
+				if (startSecond >= startTimeFloat && startSecond <= endTimeFloat) || (endSecond >= startTimeFloat && endSecond <= endTimeFloat) {
+					appendFile = append(appendFile, extinf[i])
+					appendFile = append(appendFile, fmt.Sprintf("/%s/%s", filename, extinf[i+1]))
+				}
+				startSecond = endSecond
 			}
-			startSecond = endSecond
 		}
 	}
 	appendFile = append(appendFile, "#EXT-X-ENDLIST")
@@ -140,18 +171,18 @@ func generateNewPlayList(filename string, fileContent string, startTime int, end
 	if err != nil {
 		return ""
 	}
- 	return tempFileName
+	return tempFileName
 }
-// http://127.0.0.1:8080/downloadM3u8?filename=20200801142719_m_159626323578015972c2aa302aa1d2.m3u8&start_time=00:05:01&end_time=00:10:00
+
 func generateTempFileName(filename string, start int, end int, appendFile []string) (string, error) {
 	h := md5.New()
-	h.Write([]byte(fmt.Sprintf("%s-%s-%s", filename, start, end))) // 需要加密的字符串为 123456
+	h.Write([]byte(fmt.Sprintf("%s-%d-%d", filename, start, end))) // 需要加密的字符串为 123456
 	cipherStr := h.Sum(nil)
 	tempFileName := fmt.Sprintf("%s.m3u8", hex.EncodeToString(cipherStr))
 	tempStorePath := fmt.Sprintf("%s/%s", cfg.TempDir, tempFileName)
 	fmt.Println(tempStorePath)
-	_,err := os.Stat(tempStorePath)
-	if !os.IsNotExist(err){
+	_, err := os.Stat(tempStorePath)
+	if !os.IsNotExist(err) {
 		return tempFileName, nil
 	}
 	err = ioutil.WriteFile(tempStorePath, []byte(strings.Join(appendFile, "\n")), 777)
@@ -159,4 +190,9 @@ func generateTempFileName(filename string, start int, end int, appendFile []stri
 		return "", err
 	}
 	return tempFileName, nil
+}
+
+func generatePlayListHost() string {
+	randomInt := len(cfg.PlayListHost)
+	return cfg.PlayListHost[rand.Intn(randomInt)]
 }

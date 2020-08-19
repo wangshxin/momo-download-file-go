@@ -8,9 +8,13 @@ import (
 
 type Config struct {
 	Listen       string
+	// 直播文件存储位置
 	BaseDir      string
+	// 临时生成的M3U8文件目录
 	TempDir      string
+	// 用于播放的服务器
 	PlayListHost []string
+	// 下载临时生成的M3U8文件的前缀，用于NGINX解析寻找临时生成的M3U8
 	TempPrefix   string
 }
 
