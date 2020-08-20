@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"os/exec"
 	"path"
 	"strconv"
 	"strings"
@@ -195,4 +196,22 @@ func generateTempFileName(filename string, start int, end int, appendFile []stri
 func generatePlayListHost() string {
 	randomInt := len(cfg.PlayListHost)
 	return cfg.PlayListHost[rand.Intn(randomInt)]
+}
+
+func deleteVideo(writer http.ResponseWriter, request *http.Request)  {
+	defer RecoverPanic(writer)
+	params := request.URL.Query()
+	// m_15/97/8257025640bc1fbe088478b7a2/20200819162829_m_15978257025640bc1fbe088478b7a2
+	m3u8Dir := params.Get("file")
+	storePath := fmt.Sprintf("%s/%s", cfg.BaseDir, m3u8Dir)
+	fmt.Println(storePath)
+	go func() {
+		cmd := exec.Command("rm", "-rf", storePath)
+		deleteErr := cmd.Run()
+		if deleteErr != nil {
+			localLogger.Println(deleteErr)
+		}
+	}()
+	WriteResponse(200, "video is delete", writer)
+	LogRequest(request, 200, time.Now())
 }

@@ -30,6 +30,7 @@ func createServer(addr string) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/cut", downloadCutM3u8)
 	mux.HandleFunc("/download", downloadStream)
+	mux.HandleFunc("/delete", deleteVideo)
 	var server = http.Server{
 		Addr:           addr,
 		Handler:        mux,
